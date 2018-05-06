@@ -4,3 +4,10 @@ version = "0.1.0"
 authors = ["Daniel Beckwith <djbsnx@gmail.com>"]
 
 [dependencies]
+common = { path = "common" }
+cuda = { git = "https://github.com/dbeckwith/cuda" }
+error-chain = "0.11"
+image = "0.18"
+
+[build-dependencies]
+ptx-builder = "0.3"

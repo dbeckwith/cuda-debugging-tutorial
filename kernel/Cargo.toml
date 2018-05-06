@@ -1,0 +1,12 @@
+[package]
+name = "kernel"
+version = "0.1.0"
+authors = ["Daniel Beckwith <djbsnx@gmail.com>"]
+
+[dependencies]
+nvptx-builtins = "0.1"
+
+[dependencies.common]
+path = "../common"
+default-features = false
+features = []
