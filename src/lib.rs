@@ -65,7 +65,7 @@ fn partition_work(
         device_max_threads_per_block
     );
     println!(
-        "Device max block size: {}x{}x{} threads",
+        "Device max block size: {}×{}×{} threads",
         max_block.x, max_block.y, max_block.z
     );
     println!(
