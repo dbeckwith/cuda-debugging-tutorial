@@ -32,3 +32,7 @@ Here are the steps involved in this process:
 * Save the output image.
 
 See the annotated source for more.
+
+## Debugging the Application (Coming Soon!)
+
+Now that you know how the crate is set up, let's add some buggy code and learn how to debug it.
