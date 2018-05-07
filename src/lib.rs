@@ -240,7 +240,7 @@ pub fn run_blur(radius: f64, input_path: &Path, output_path: &Path) -> Result<()
     let module = context
         .load_module(&ptx_bytecode)
         .chain_err(|| "Error loading PTX module")?;
-    let blur_kernel = module.function(&CString::new("gaussian_blur").unwrap())?;
+    let blur_kernel = module.function(&CString::new("blur").unwrap())?;
 
     context.set_current()?;
 

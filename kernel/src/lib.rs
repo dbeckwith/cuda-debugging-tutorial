@@ -8,7 +8,7 @@ use common::{kernel, ImageInfo, Pixel};
 use nvptx_builtins::*;
 
 #[no_mangle]
-pub extern "ptx-kernel" fn gaussian_blur(
+pub extern "ptx-kernel" fn blur(
     input_pixels: *const Pixel,
     output_pixels: *mut Pixel,
     info: *const ImageInfo,
@@ -17,5 +17,5 @@ pub extern "ptx-kernel" fn gaussian_blur(
     let x = unsafe { block_idx_x() * block_dim_x() + thread_idx_x() } as usize;
     let y = unsafe { block_idx_y() * block_dim_y() + thread_idx_y() } as usize;
 
-    kernel::gaussian_blur(input_pixels, output_pixels, info, radius, x, y);
+    kernel::blur(input_pixels, output_pixels, info, radius, x, y);
 }
