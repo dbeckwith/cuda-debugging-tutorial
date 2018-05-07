@@ -12,6 +12,7 @@ use cuda::driver as cu;
 use errors::*;
 use image::{ImageRgb8, RgbImage};
 use profiler::Profiler;
+use std::cmp::min;
 use std::ffi::CString;
 use std::mem::size_of;
 use std::path::Path;
@@ -29,6 +30,151 @@ struct WorkSize {
     x: u32,
     y: u32,
     z: u32,
+}
+
+fn partition_work(
+    device: &cu::Device,
+    kernel: &cu::Function,
+    work: &WorkSize,
+) -> Result<(cu::Grid, cu::Block)> {
+    println!(
+        "Work size: {}×{}×{} = {} items",
+        work.x,
+        work.y,
+        work.z,
+        work.x * work.y * work.z
+    );
+
+    let kernel_max_threads_per_block = kernel.max_threads_per_block()? as u32;
+    let device_max_threads_per_block = device.max_threads_per_block()? as u32;
+    let max_block = cu::Block::xyz(
+        device.max_block_dim_x()? as u32,
+        device.max_block_dim_y()? as u32,
+        device.max_block_dim_z()? as u32,
+    );
+    let max_threads_per_block = min(device_max_threads_per_block, kernel_max_threads_per_block);
+    let max_registers_per_block = device.max_registers_per_block()? as u32;
+    let registers_per_thread = kernel.num_regs()? as u32;
+
+    println!(
+        "Kernel max threads per block: {} threads",
+        kernel_max_threads_per_block
+    );
+    println!(
+        "Device max threads per block: {} threads",
+        device_max_threads_per_block
+    );
+    println!(
+        "Device max block size: {}x{}x{} threads",
+        max_block.x, max_block.y, max_block.z
+    );
+    println!(
+        "Device max registers per block: {} registers",
+        max_registers_per_block
+    );
+    println!("Registers per thread: {} registers", registers_per_thread);
+
+    // TODO: consider that this may not be optimal
+    // first of all, it doesn't even maximize threads_per_block
+    // second, maximal threads_per_block isn't necessarily optimal
+    // block size should be based on how the kernel will branch
+    // e.g. if the kernel always branches the same on all z values,
+    // but randomly on x and y values,
+    // then optimal block size would be 1×1×∞
+
+    let check = |block: &cu::Block| {
+        if block.x > work.x {
+            return false;
+        }
+        if block.x > max_block.x {
+            return false;
+        }
+        if block.y > work.y {
+            return false;
+        }
+        if block.y > max_block.y {
+            return false;
+        }
+        if block.z > work.z {
+            return false;
+        }
+        if block.z > max_block.z {
+            return false;
+        }
+        let threads_per_block = block.x * block.y * block.z;
+        if threads_per_block > max_threads_per_block {
+            return false;
+        }
+        let registers_per_block = registers_per_thread * threads_per_block;
+        if registers_per_block > max_registers_per_block {
+            return false;
+        }
+        true
+    };
+
+    let mut block = cu::Block::xyz(1, 1, 1);
+    loop {
+        let mut failed_checks = 0;
+        block.x += 1;
+        if !check(&block) {
+            block.x -= 1;
+            failed_checks += 1;
+        }
+        block.y += 1;
+        if !check(&block) {
+            block.y -= 1;
+            failed_checks += 1;
+        }
+        block.z += 1;
+        if !check(&block) {
+            block.z -= 1;
+            failed_checks += 1;
+        }
+        if failed_checks == 3 {
+            break;
+        }
+    }
+
+    println!(
+        "Block size: {}×{}×{} = {} threads",
+        block.x,
+        block.y,
+        block.z,
+        block.x * block.y * block.z
+    );
+
+    let grid = cu::Grid::xyz(
+        ceil_div(work.x, block.x),
+        ceil_div(work.y, block.y),
+        ceil_div(work.z, block.z),
+    );
+
+    println!(
+        "Grid size: {}×{}×{} = {} blocks",
+        grid.x,
+        grid.y,
+        grid.z,
+        grid.x * grid.y * grid.z
+    );
+
+    let threads_per_block = block.x * block.y * block.z;
+    let registers_per_block = registers_per_thread * threads_per_block;
+
+    println!(
+        "Threads per block: {} threads ({:.2}%)",
+        threads_per_block,
+        threads_per_block as f32 / max_threads_per_block as f32 * 100.
+    );
+    println!(
+        "Registers per block: {} registers ({:.2}%)",
+        registers_per_block,
+        registers_per_block as f32 / max_registers_per_block as f32 * 100.
+    );
+
+    assert!(threads_per_block <= max_threads_per_block);
+    assert!(registers_per_block <= max_registers_per_block);
+
+    Ok((grid, block))
 }
 
 pub fn run_blur(radius: f64, input_path: &Path, output_path: &Path) -> Result<()> {
@@ -132,13 +278,16 @@ pub fn run_blur(radius: f64, input_path: &Path, output_path: &Path) -> Result<()
         ).chain_err(|| "Error copying input image to device")?;
     }
 
-    let work = WorkSize {
-        x: image_info.width as u32,
-        y: image_info.height as u32,
-        z: 1,
-    };
-    let block = cu::Block::xy(1, 1);
-    let grid = cu::Grid::xy(ceil_div(work.x, block.x), ceil_div(work.y, block.y));
+    profiler.step("Partitioning work");
+    let (grid, block) = partition_work(
+        &device,
+        &blur_kernel,
+        &WorkSize {
+            x: image_info.width as u32,
+            y: image_info.height as u32,
+            z: 1,
+        },
+    )?;
 
     profiler.step("Running blur kernel");
     blur_kernel
