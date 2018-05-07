@@ -1,8 +1,8 @@
 use super::{ImageInfo, Pixel};
 
 pub fn gaussian_blur(
-    input_image: *const Pixel,
-    output_image: *mut Pixel,
+    input_pixels: *const Pixel,
+    output_pixels: *mut Pixel,
     info: *const ImageInfo,
     radius: f64,
     x: usize,
@@ -14,7 +14,7 @@ pub fn gaussian_blur(
         return;
     }
 
-    let output_pixel = unsafe { &mut *output_image.offset(info.image_offset(x, y)) };
+    let output_pixel = unsafe { &mut *output_pixels.offset(info.image_offset(x, y)) };
 
-    *output_pixel = unsafe { *input_image.offset(info.image_offset(x, y)) };
+    *output_pixel = unsafe { *input_pixels.offset(info.image_offset(x, y)) };
 }
